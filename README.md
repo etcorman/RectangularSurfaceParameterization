@@ -1,4 +1,5 @@
 # Rectangular Surface Parametrization
+![icon](https://github.com/user-attachments/assets/c5910a61-4265-4186-92f2-e5a7779c25d8)
 
 Code associated with the following publication:
 
