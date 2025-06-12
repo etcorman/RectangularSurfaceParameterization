@@ -1,0 +1,12 @@
+# General
+**/*.DS_Store
+.AppleDouble
+.LSOverride
+
+# Matlab
+**/*.m~
+**/*.asv
+
+# Folder
+/QuantizationYoann/build/*
+/Results/*
