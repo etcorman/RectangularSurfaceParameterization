@@ -151,6 +151,7 @@ axis equal; view(0,-90);
 title([num2str(sum(id_sing_p)+sum(id_sing_m)), ' singus']);
 
 %% Save mesh
+% Rotate UVs by 45° in case of Chebyshev net
 if contains(energy_type, 'cheby')
     r = [1,1;-1,1]*(sqrt(2)/2);
     UV = Xp*r;
@@ -158,18 +159,24 @@ else
     UV = Xp;
 end
 
+% Desactivate quantization in known case of failure
 if ifquantization && ~isempty(param.ide_bound) && ~ifboundary
     warning('Boundary alignment is disactivated.');
-    warning('The Quantization step does not support free boundaries.');
+    warning('The quantization step does not support free boundaries.');
+    ifquantization = false;
 end
 
 if ifquantization && ~ifseamless_const
     warning('The seamlessness constraint is disactivated.');
-    warning('The Quantization needs an exact seamless map as input.');
+    warning('The quantization needs an exact seamless map as input.');
+    ifquantization = false;
 end
 
 if ifquantization && any(disto.detJ < 0)
     warning('The parametrization is not locally injective.');
-    warning('The Quantization step will fail.');
+    warning('The quantization step will fail.');
+    ifquantization = false;
 end
+
+% Save parametrization
 save_param(ifquantization, path_save, mesh_name, sqrt(area_tot)*Src.X, Src.T, UV, SrcCut.T, sing, Src.E2V(param.ide_hard,:));

@@ -1,5 +1,9 @@
 function save_param(ifquantization, path_save, mesh_name, X, T, UV, TUV, sing, E2V_hardedge)
 
+if ~exist(path_save, 'dir')
+    mkdir(path_save);
+end
+
 id_sing_p = sing > 1/8;
 id_sing_m = sing <-1/8;
 
