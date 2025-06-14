@@ -97,7 +97,6 @@ ang = brush_frame_field(param, omega, param.tri_fix, ang(param.tri_fix));
 %% Match curvature with closest frame direction
 z_max = (dir_max./abs(dir_max)).^2;
 z_min = 1i*z_max;
-kappa = sort(kappa, 2);
 [~,id] = min(abs([z_max, z_min] - exp(2*1i*ang)), [], 2);
 kappa = [kappa(:,1).*(id == 1) + kappa(:,2).*(id == 2), ...
          kappa(:,1).*(id == 2) + kappa(:,2).*(id == 1)];
