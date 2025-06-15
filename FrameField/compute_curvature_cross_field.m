@@ -44,19 +44,19 @@ end
 Curv = Curv(:,[1 2 4]);
 
 %% Extract principal directions
-dir_max = zeros(Src.nf,1); % principal direction
+dir_min = zeros(Src.nf,1); % principal direction
 kappa = zeros(Src.nf,2); % principal curvature
 for i = 1:Src.nf
     A = [Curv(i,1), Curv(i,2); Curv(i,2), Curv(i,3)];
 
     [V,D] = eig(A);
 
-    dir_max(i) = complex(V(1,1), V(2,1));
+    dir_min(i) = complex(V(1,1), V(2,1));
     kappa(i,:) = diag(D);
 end
 
 %% Frame field smoothing
-z = (dir_max./abs(dir_max)).^4; % Init cross field from principal direction
+z = (dir_min./abs(dir_min)).^4; % Init cross field from principal direction
 z_fix = ones(length(param.tri_fix),1); % reference frame is algned with constraint edge by construction
 z(param.tri_fix) = z_fix; % alignment constraints
 
@@ -95,15 +95,15 @@ sing = (dec.d1d*(param.para_trans - omega) + param.Kt_invisible)/(2*pi);
 ang = brush_frame_field(param, omega, param.tri_fix, ang(param.tri_fix));
 
 %% Match curvature with closest frame direction
-z_max = (dir_max./abs(dir_max)).^2;
-z_min = 1i*z_max;
-[~,id] = min(abs([z_max, z_min] - exp(2*1i*ang)), [], 2);
+z_min = (dir_min./abs(dir_min)).^2;
+z_max = 1i*z_min;
+[~,id] = min(abs([z_min, z_max] - exp(2*1i*ang)), [], 2);
 kappa = [kappa(:,1).*(id == 1) + kappa(:,2).*(id == 2), ...
          kappa(:,1).*(id == 2) + kappa(:,2).*(id == 1)];
 
 % % Find nearest angle
 % q = 6;
-% ang_curv = angle(z_max)/2 + (-q:q)*pi/2;
+% ang_curv = angle(z_min)/2 + (-q:q)*pi/2;
 % z_curv = exp(1i*ang_curv);
 % [~,id] = min(abs(z_curv - exp(1i*ang)), [], 2);
 % ang_curv = sum(ang_curv.*(id == (1:2*q+1)), 2);
