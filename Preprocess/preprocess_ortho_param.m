@@ -8,7 +8,7 @@ function [param,Src,dec] = preprocess_ortho_param(Src, dec, ifboundary, ifharded
 % Input:
 % - Src: triangle mesh data structure
 % - dec: DEC data structure
-% - ifboundary: (boolean) enforce bourndary alignment
+% - ifboundary: (boolean) enforce boundary alignment
 % - ifhardedge: (boolean) enforce hard-edge alignment
 % - tol_dihedral_deg: (double) hard-edge detection threshold (angle in degree) 
 % - Ehard2V: (integer array n x 2) vertex indices of alignment edges (optinal)
@@ -145,7 +145,7 @@ end
 param.ide_hard = ide_hard;
 param.tri_hard = tri_hard;
 
-%% Compute boundary related stuff
+%% Compute boundary related stuff (mostly needed for, e.g., trivial connections)
 [ide_bound,tri_bound] = boundary_indices(Src);
 idx_bound = unique(Src.E2V(ide_bound,:));
 idx_int = setdiff((1:Src.nv)', idx_bound);
@@ -162,20 +162,20 @@ param.ide_int = ide_int;
 param.tri_int = tri_int;
 
 %% Merge boundary and hard edges
-% group constraints by connected component 
+% group constraints by connected component  (still for trivial connections)
 ide_fix = [ide_hard; ide_bound];
 
-% Compute a graph made of only the constrained edges
+% Compute a graph made of only the constrained edges (still for trivial connections)
 idx_fix = unique(Src.E2V(ide_fix,:));
 idx_fix_inv = zeros(Src.nv,1);
 idx_fix_inv(idx_fix) = 1:length(idx_fix);
 G = graph(idx_fix_inv(Src.E2V(ide_fix,1)), idx_fix_inv(Src.E2V(ide_fix,2)));
 
-% Find the connected components of the graph
+% Find the connected components of the graph (still for trivial connections)
 [bins,binsizes] = conncomp(G);
 
 % For each component store: vertex, edge, triangle indices and edge
-% orientation sign
+% orientation sign (still for trivial connections)
 idx_fix_cell = cell(length(binsizes),1);
 ide_fix_cell = cell(length(binsizes),1);
 tri_fix_cell = cell(length(binsizes),1);
