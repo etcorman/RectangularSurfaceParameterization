@@ -1,21 +1,15 @@
-function [SrcCut,idx_cut_inv,ide_cut_inv,edge_cut] = cut_mesh(X, T, E2V, E2T, T2E, T2T, idcone, edge_cut_tag)
+function [SrcCut,idx_cut_inv,ide_cut_inv,edge_cut] = cut_mesh(X, T, E2V, E2T, T2E, T2T, idcone, edge_jump_tag)
 
 nv = size(X,1);
 ne = size(E2V,1);
 nf = size(T,1);
 
-
-% compute tree from first cone or boundary
-[idx_bound_cell,ide_bound_cell] = extract_all_boundary_curves(T, E2V);
-idx_bound = cell2mat(idx_bound_cell);
-ide_bound = cell2mat(ide_bound_cell);
-
-% dual spanning tree
+% Dual spanning tree
 Q = 1;
-pred =-ones(nf,1); % Visited vertices
-pred(Q) = 0;
-edge = false(ne,1);
-edge(edge_cut_tag) = true;
+tri_pred =-ones(nf,1); % Visited faces
+tri_pred(Q) = 0;
+visited_edge = false(ne,1);
+visited_edge(edge_jump_tag) = true;
 while ~isempty(Q)
     idtri = Q(1);
     Q(1) = [];
@@ -27,18 +21,18 @@ while ~isempty(Q)
     adjedge = adjedge(ib);
     
     for i = 1:length(adj)
-        if (pred(adj(i)) == -1) && ~edge(adjedge(i))
-            pred(adj(i)) = idtri;
+        if (tri_pred(adj(i)) == -1) && ~visited_edge(adjedge(i))
+            tri_pred(adj(i)) = idtri;
             Q = [Q; adj(i)];
             
-            edge(adjedge(i)) = true;
+            visited_edge(adjedge(i)) = true;
         end
     end
 end
 
-% cut leaves (ie degree vertices that are not singularities)
-edge(edge_cut_tag) = false; 
-edge_cut =~edge; % Set of current edge in the cut
+% Recursively cut leaves (ie degree 1 vertices that are not singularities)
+visited_edge(edge_jump_tag) = false; 
+edge_cut =~visited_edge; % Set of current edge in the cut
 deg = accumarray(vec(E2V(edge_cut,:)), 1, [nv,1]); % vertices degree
 
 deg1 = deg == 1; % set of degree 1 vertices

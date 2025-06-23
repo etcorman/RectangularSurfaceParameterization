@@ -21,109 +21,104 @@ function [param,Src,dec] = preprocess_ortho_param(Src, dec, ifboundary, ifharded
 comp_angle = @(u,v,n) atan2(dot(cross(u,v,2),n,2), dot(u,v,2));
 
 %% Remeshing: a triangle cannot have two alignment constraints
+% Check three cases:
+% 1. alignment constraints are detected by the dihedral angle
+% 2. alignment constraints is given by vertex indices
+
 if ifhardedge && ~exist('Ehard2V','var')
-    tol_dihedral = tol_dihedral_deg*pi/180;
+    % Compute hard edges
+    [ide_hard,tri_hard,ide_bound,tri_bound] = detect_hard_edge(Src, tol_dihedral_deg);
     
-    [idx_bound_cell,ide_bound_cell] = extract_all_boundary_curves(Src.T, Src.E2V);
-    ide_bound = cell2mat(ide_bound_cell);
-    tri_bound = sum(Src.E2T(ide_bound,1:2),2);
-    ide_int = setdiff((1:Src.ne)', ide_bound);
+    % List of all constraints (boundary + hard edges)
+    ide_fix = [ide_hard; ide_bound];    % Constrained edges
+    tri_fix = [tri_hard(:); tri_bound]; % Corresponding faces
     
-    edge = Src.X(Src.E2V(:,2),:) - Src.X(Src.E2V(:,1),:);
-    edge = edge./sqrt(sum(edge.^2,2));
-    dihedral_angle = Src.E2T(ide_int,4).*comp_angle(Src.normal(Src.E2T(ide_int,1),:), Src.normal(Src.E2T(ide_int,2),:), edge(ide_int,:));
-    ide_hard = ide_int(abs(dihedral_angle) > tol_dihedral);
-    tri_hard = Src.E2T(ide_hard,1:2);
-    
-    % Set constraint list
-    ide_fix = [ide_hard; ide_bound];
-    tri_fix = [tri_hard(:); tri_bound];
-    
+    % If a face appears twice it is over constrained
+    % -> must be split in 3
     if numel(tri_fix) ~= length(unique(tri_fix))
-        disp('Remeshing surface...');
-        % Remesh
+        % Find indices of over-constrained triangles
         tri = sum(ismember(abs(Src.T2E), ide_fix) ,2) >= 2;
 
+        % Add the barycenter to the new vertex list Xs
         b = (Src.X(Src.T(tri,1),:)+Src.X(Src.T(tri,2),:)+Src.X(Src.T(tri,3),:))/3;
         Xs = [Src.X; b];
 
+        % Add 3 triangles per constrained triangles to the new triangle list Ts
         np = Src.nv+(1:size(b,1))';
         Ttri = [Src.T(tri,[1 2]), np ; Src.T(tri,[2 3]), np ; Src.T(tri,[3 1]), np];
         Ts = Src.T;
         Ts(tri,:) = [];
         Ts = [Ts; Ttri];
 
+        % Recompute connectivity information
         Src = MeshInfo(Xs, Ts);
-        [idx_bound_cell,ide_bound_cell] = extract_all_boundary_curves(Src.T, Src.E2V);
-        ide_bound = cell2mat(ide_bound_cell);
-        tri_bound = sum(Src.E2T(ide_bound,1:2),2);
-        ide_int = setdiff((1:Src.ne)', ide_bound);
 
-        edge = Src.X(Src.E2V(:,2),:) - Src.X(Src.E2V(:,1),:);
-        edge = edge./sqrt(sum(edge.^2,2));
-        dihedral_angle = Src.E2T(ide_int,4).*comp_angle(Src.normal(Src.E2T(ide_int,1),:), Src.normal(Src.E2T(ide_int,2),:), edge(ide_int,:));
-        ide_hard = ide_int(abs(dihedral_angle) > tol_dihedral);
-        tri_hard = Src.E2T(ide_hard,1:2);
+        % Recompute hard edges
+        [ide_hard,tri_hard,ide_bound,tri_bound] = detect_hard_edge(Src, tol_dihedral_deg);
         
+        % New list of all constraints (boundary + hard edges)
         ide_fix = [ide_hard; ide_bound];
         tri_fix = [tri_hard(:); tri_bound];
-        
-        disp('... remeshing done.');
     end
 
+    % Check that the remeshing worked
     assert(numel(tri_fix) == length(unique(tri_fix)), 'Multiple constraints on a triangle.');
 elseif exist('Ehard2V','var') 
-    edge = Src.X(Src.E2V(:,2),:) - Src.X(Src.E2V(:,1),:);
-    edge = edge./sqrt(sum(edge.^2,2));
-    [idx_bound_cell,ide_bound_cell] = extract_all_boundary_curves(Src.T, Src.E2V);
-    ide_bound = cell2mat(ide_bound_cell);
-    ide_int = setdiff((1:Src.ne)', ide_bound);
-    dihedral_angle = Src.E2T(ide_int,4).*comp_angle(Src.normal(Src.E2T(ide_int,1),:), Src.normal(Src.E2T(ide_int,2),:), edge(ide_int,:));
     [~,ide_hard] = intersect(Src.E2V, sort(Ehard2V,2), 'rows');
     tri_hard = Src.E2T(ide_hard,1:2);
 else
-    edge = Src.X(Src.E2V(:,2),:) - Src.X(Src.E2V(:,1),:);
-    edge = edge./sqrt(sum(edge.^2,2));
-    [idx_bound_cell,ide_bound_cell] = extract_all_boundary_curves(Src.T, Src.E2V);
-    ide_bound = cell2mat(ide_bound_cell);
-    ide_int = setdiff((1:Src.ne)', ide_bound);
-    dihedral_angle = Src.E2T(ide_int,4).*comp_angle(Src.normal(Src.E2T(ide_int,1),:), Src.normal(Src.E2T(ide_int,2),:), edge(ide_int,:));
     ide_hard = [];
     tri_hard = Src.E2T(ide_hard,1:2);
 end
 
-% Remove non feature edges with two feature vertices
+%% Remeshing: only constraint edges can have both vertices belonging to constraint edges or a boundary
+% If this happen, the edge is plitted in two
+ide_bound = boundary_indices(Src);
 if ifhardedge || ~isempty(ide_bound)
+    % Gather edge indices from constrained edges and boundary edges
     ide_fix = [ide_hard; ide_bound];
+     % Find corresponding vertex indices
     idx_fix = unique(Src.E2V(ide_fix,:));
+
+    % Edges indices whose vertices both belongs to constrained vertices
     ide = find(all(ismember(Src.E2V, idx_fix), 2));
+    % Edges indices whose vertices both belongs to constrained vertices but
+    % are not constrained edges themselves
     ide = setdiff(ide, ide_fix);
-    if ~isempty(ide)
-        nv = Src.nv;
-        Ts = Src.T;
-        Xs = Src.X;
-        E2T = Src.E2T(:,1:2);
-        E2V = Src.E2V;
-        while ~isempty(ide)
+
+    % If ide is not empty, hese edges must be split
+    if ~isempty(ide) 
+        nv = Src.nv;            % Current vertex count
+        Ts = Src.T;             % New face list
+        Xs = Src.X;             % New vertex list
+        E2T = Src.E2T(:,1:2);   % New edge to face table
+        E2V = Src.E2V;          % New edge to vertices
+        while ~isempty(ide) % while there are edges to split
+            % Take first edge in the list
             id = ide(1);
-            m = (Xs(E2V(id,1),:) + Xs(E2V(id,2),:))/2;
             idx = E2V(id,:);
     
+            % Split the first triangle in two
             idt1 = E2T(id,1);
             t1 = Ts(idt1,:);
             t1 = circshift(t1, [0,1-find(~ismember(t1,idx))]);
     
+            % Split the second triangle in two
             idt2 = E2T(id,2);
             t2 = Ts(idt2,:);
             t2 = circshift(t2, [0,1-find(~ismember(t2,idx))]);
     
+            % Update the triangle list
             Ts(idt1,:) = [t1(1), t1(2), nv+1];
             Ts(idt2,:) = [t2(1), t2(2), nv+1];
             Ts = [Ts; t1(1), nv+1, t1(3); t2(1), nv+1, t2(3)];
+            
+            % Middle of the edge is added to the vertex list
+            m = (Xs(E2V(id,1),:) + Xs(E2V(id,2),:))/2;
             Xs = [Xs; m];
-    
             nv = nv + 1;
     
+            % Update connectivity and check for new edges to split
             idx = sort(E2V(ide_fix,:),2);
             [E2V,~,E2T] = connectivity(Ts);
             [~,ide_fix] = intersect(sort(E2V,2), idx, 'rows');
@@ -132,60 +127,33 @@ if ifhardedge || ~isempty(ide_bound)
             ide = setdiff(ide, ide_fix);
         end
     
+        % Vertex pair corresponding to constrained edges (needed to find
+        % new edge indices)
         idx_hard = sort(Src.E2V(ide_hard,:),2);
+
+        % Recompute connectivity and DEC
         Src = MeshInfo(Xs, Ts);
         dec = dec_tri(Src);
-    
-        edge = Src.X(Src.E2V(:,2),:) - Src.X(Src.E2V(:,1),:);
-        edge = edge./sqrt(sum(edge.^2,2));
-        [idx_bound_cell,ide_bound_cell] = extract_all_boundary_curves(Src.T, Src.E2V);
-        ide_bound = cell2mat(ide_bound_cell);
-        ide_int = setdiff((1:Src.ne)', ide_bound);
-        dihedral_angle = Src.E2T(ide_int,4).*comp_angle(Src.normal(Src.E2T(ide_int,1),:), Src.normal(Src.E2T(ide_int,2),:), edge(ide_int,:));
+
+        % Update constrained indices
         [~,ide_hard] = intersect(sort(Src.E2V,2), idx_hard, 'rows');
         tri_hard = Src.E2T(ide_hard,1:2);
-    
-        % Set constraint list
-        ide_fix = [ide_hard; ide_bound];
-        tri_fix = [tri_hard(:); tri_bound];
-        idx_fix = unique(Src.E2V(ide_fix,:));
-        ide = all(ismember(Src.E2V, idx_fix), 2);
-        assert(sum(ide) == length(ide_fix), 'Edge with two constrained vx.')
     end
 end
 
-% col = zeros(Src.nv,1); col(Src.E2V(ide_hard,:)) = 1;
-% figure;
-% trisurf(Src.T, Src.X(:,1), Src.X(:,2), Src.X(:,3), col, 'facecolor','interp', 'edgecolor','k');
-% axis equal;
-
-% param.edge = edge;
-% param.dihedral_angle = zeros(Src.ne,1);
-% param.dihedral_angle(ide_int) = dihedral_angle;
+% Store hard edges
 param.ide_hard = ide_hard;
 param.tri_hard = tri_hard;
 
 %% Compute boundary related stuff
-[idx_bound_cell,ide_bound_cell] = extract_all_boundary_curves(Src.T, Src.E2V);
-tri_bound_cell = cell(length(ide_bound_cell),1);
-ide_bound_sign_cell = cell(length(ide_bound_cell),1);
-for i = 1:length(ide_bound_cell)
-    tri_bound_cell{i} = sum(Src.E2T(ide_bound_cell{i},1:2),2);
-    ide_bound_sign_cell{i} = sign(idx_bound_cell{i} - circshift(idx_bound_cell{i}, [-1,0]));
-end
-idx_bound = cell2mat(idx_bound_cell);
+[ide_bound,tri_bound] = boundary_indices(Src);
+idx_bound = unique(Src.E2V(ide_bound,:));
 idx_int = setdiff((1:Src.nv)', idx_bound);
-ide_bound = cell2mat(ide_bound_cell);
-ide_bound_sign = cell2mat(ide_bound_sign_cell);
+
 ide_int = setdiff((1:Src.ne)', ide_bound);
-tri_bound = cell2mat(tri_bound_cell);
 tri_int = setdiff((1:Src.nf)', tri_bound);
 
-% param.idx_bound_cell = idx_bound_cell;
-% param.tri_bound_cell = tri_bound_cell;
-% param.ide_bound_cell = ide_bound_cell;
-% param.ide_bound_sign_cell = ide_bound_sign_cell;
-
+% Store in structure
 param.idx_bound = idx_bound;
 param.ide_bound = ide_bound;
 param.tri_bound = tri_bound;
@@ -194,13 +162,20 @@ param.ide_int = ide_int;
 param.tri_int = tri_int;
 
 %% Merge boundary and hard edges
+% group constraints by connected component 
 ide_fix = [ide_hard; ide_bound];
+
+% Compute a graph made of only the constrained edges
 idx_fix = unique(Src.E2V(ide_fix,:));
 idx_fix_inv = zeros(Src.nv,1);
 idx_fix_inv(idx_fix) = 1:length(idx_fix);
 G = graph(idx_fix_inv(Src.E2V(ide_fix,1)), idx_fix_inv(Src.E2V(ide_fix,2)));
+
+% Find the connected components of the graph
 [bins,binsizes] = conncomp(G);
 
+% For each component store: vertex, edge, triangle indices and edge
+% orientation sign
 idx_fix_cell = cell(length(binsizes),1);
 ide_fix_cell = cell(length(binsizes),1);
 tri_fix_cell = cell(length(binsizes),1);
@@ -211,11 +186,6 @@ for i = 1:length(binsizes)
     ide_fix_cell{i} = ide_fix_cell{i}(ismember(ide_fix_cell{i}, ide_fix));
     tri_fix_cell{i} = vec(Src.E2T(ide_fix_cell{i},1:2));
     ide_sign_fix_cell{i} = vec(Src.E2T(ide_fix_cell{i},3:4));
-    
-%     col = zeros(Src.nv,1); col(idx_fix_cell{i}) = 1;
-%     figure;
-%     trisurf(Src.T, Src.X(:,1), Src.X(:,2), Src.X(:,3), col, 'facecolor','interp', 'edgecolor','k');
-%     axis equal; title(num2str(i));
 end
 
 %% Smooth cross field: Face-to-face parallel transport
@@ -264,9 +234,11 @@ param.para_trans = para_trans;
 param.Kt = K;
 param.Kt_invisible = K - dec.d1d*para_trans;
 
-%% Smooth cross field: d1d without boundary and hard edges
-% diffenrential with mesh decomposed into constraints sector
-% used for cross field computation with hard-edges
+%% Smooth cross field: take care of acute angle between edge constraints
+% See: "Frame Fields for CAD models" https://inria.hal.science/hal-03537852/document
+
+% Build exterior derivative of dual 1-form (d1d) where constrained edges
+% are seen as boundaries
 E2V = Src.E2V;
 T = Src.T;
 nv = Src.nv;
@@ -324,40 +296,48 @@ K(param.idx_fix_plus) = K(param.idx_fix_plus) - pi;
 param.K = K;
 param.K_invisible = K - param.d1d*para_trans;
 
-%% Trivial connection: Path between boundaries
+%% Trivial connection: Path between isolated constraints
+% Build the sparse matrix Ilink accumulating the dual 1-form along each
+% path connecting the connected component of constraints
 nc = max(length(ide_fix_cell) - 1, 0);
 Ilink = sparse(nc,Src.ne);
 
+% Compute a shortest path between the first component and all the other
 for i = 1:nc
+    % Edge weights
     ld = max(dec.star1p*sqrt(Src.SqEdgeLength), 1e-5);
     for j = 1:nc+1
         if (j ~= 1) && (j ~= i+1)
-            ld(ide_fix_cell{j}) = max(ld)*1e5;
+            ld(ide_fix_cell{j}) = max(ld)*1e5;  % Large weight on all boundaries except 1 and j
         else
-            ld(ide_fix_cell{j}) = min(ld)*1e-5;
+            ld(ide_fix_cell{j}) = min(ld)*1e-5; % Small weight on all boundaries for 1 and j
         end
     end
+
+    % Build prinmal graph
     Gd = graph(E2T(ide_int,1), E2T(ide_int,2), ld(ide_int));
     
-    % dual path
+    % Shortest dual path from a vertex in component 1 and a vertex in
+    % compenent i+1
     P = shortestpath(Gd, tri_fix_cell{1}(1), tri_fix_cell{i+1}(1))';
+
+    % Find edge indices of the path
     ed = [P(1:end-1), P(2:end)];
     [~,~,ide] = intersect(sort(ed,2), sort(E2T,2), 'rows', 'stable');
     assert(length(ide) == length(P)-1);
     
+    % Remove part of the path on the boundary of 1 and i+1
     a = find(ismember(P, tri_fix_cell{1}), 1, 'last');
     b = find(ismember(P, tri_fix_cell{i+1}), 1, 'first');
     id = a:b-1;
     ide = ide(id);
     ed = ed(id,:);
-    
+
+    % Edge sign
     s = (E2T(ide,1) == ed(:,1)) - (E2T(ide,2) == ed(:,1));
+
+    % Build 1-form integration matrix along the path
     Ilink(i,:) = sparse(ones(length(ide),1), ide, s, 1, Src.ne);
-    
-%     col = zeros(Src.nf,1); col(P(a:b)) = 1;
-%     figure;
-%     trisurf(Src.T, Src.X(:,1), Src.X(:,2), Src.X(:,3), col);
-%     axis equal; title(num2str(i+1));
 end
 Ilink_hard = Ilink;
 Ilink_hard(:,ide_hard) = 0; % hard edge do not count
@@ -366,22 +346,24 @@ param.Ilink = Ilink;
 param.Ilink_hard = Ilink_hard;
 
 %% Trivial connection: Non-contractible cycles
-[cycle,cocycle] = find_graph_generator(Src.X, full(diag(dec.star1p)), Src.T, Src.E2T, Src.E2V, 1);
+% Compute non-constractible loops
+[cycle,cocycle] = find_graph_generator(full(diag(dec.star1p)), Src.T, Src.E2T, Src.E2V, 1);
 
+% Build the sparse matrix Icycle accumulating the dual 1-form along each
+% cycle
 nc = length(cocycle);
 Icycle = sparse(nc,Src.ne);
 for i = 1:nc
+    % Find edge indices correpsonding to cycle
     ed = [cocycle{i}, circshift(cocycle{i}, [1,0])];
     [~,ide] = ismember(sort(ed,2), sort(E2T,2), 'rows');
     assert(length(ide) == length(cocycle{i}));
     
+    % Find edge sign in the cycle
     s = (E2T(ide,1) == ed(:,1)) - (E2T(ide,2) == ed(:,1));
+
+    % Build sparce matrix
     Icycle(i,:) = sparse(ones(length(ide),1), ide, s, 1, Src.ne);
-    
-%     col = zeros(Src.nf,1); col(cocycle{i}) = 1;
-%     figure;
-%     trisurf(Src.T, Src.X(:,1), Src.X(:,2), Src.X(:,3), col);
-%     axis equal;
 end
 Icycle_hard = Icycle;
 Icycle_hard(:,ide_hard) = 0; % hard edge do not count
@@ -403,9 +385,43 @@ else
     ide_fix = [];
     tri_fix = [];
 end
+
 idx_fix = unique(Src.E2V(ide_fix,:));
 param.ide_fix = ide_fix;
 param.idx_fix = idx_fix;
 param.ide_free = setdiff((1:Src.ne)', ide_fix);
 param.tri_fix = tri_fix;
 param.tri_free = setdiff((1:Src.nf)', param.tri_fix);
+end
+
+function [ide_hard,tri_hard,ide_bound,tri_bound] = detect_hard_edge(Src, tol_dihedral_deg)
+comp_angle = @(u,v,n) atan2(dot(cross(u,v,2),n,2), dot(u,v,2));
+tol_dihedral = tol_dihedral_deg*pi/180;
+
+% Find boundary edges
+[ide_bound,tri_bound] = boundary_indices(Src);
+
+% Interior edges
+ide_int = setdiff((1:Src.ne)', ide_bound);
+
+% Compute unit vector edges
+edge = Src.X(Src.E2V(:,2),:) - Src.X(Src.E2V(:,1),:);
+edge = edge./sqrt(sum(edge.^2,2));
+
+% Compute angle between normals by using the edge vector for sign
+dihedral_angle = Src.E2T(ide_int,4).*comp_angle(Src.normal(Src.E2T(ide_int,1),:), Src.normal(Src.E2T(ide_int,2),:), edge(ide_int,:));
+
+% Hard edges are angle larger than a threshold
+ide_hard = ide_int(abs(dihedral_angle) > tol_dihedral);
+
+% Find adjancent triangles
+tri_hard = Src.E2T(ide_hard,1:2);
+end
+
+function [ide_bound,tri_bound] = boundary_indices(Src)
+% A boundary edge belongs to only one triangle
+ide_bound = find(any(Src.E2T == 0, 2));
+
+% A boundary triangle is incident to a boundary edge
+tri_bound = sum(Src.E2T(ide_bound,1:2),2);
+end
